@@ -7,6 +7,7 @@ from .database import init_db
 from .email_notifier import notify_update, notify_job_digest
 from .cache import get_client as cache_client
 
+logging.basicConfig(level=os.getenv('LOG_LEVEL','INFO'))
 log=logging.getLogger(__name__)
 
 def scheduled_run():
@@ -55,5 +56,8 @@ def main():
             coalesce=True,
         )
     log.info('Job Hunter scheduler active: %s at %s %s',days,','.join(x.strip() for x in times),tz)
+    if os.getenv('RUN_SCHEDULED_SCAN_ON_STARTUP','false').lower() in {'1','true','yes'}:
+        log.info('Running startup scan because RUN_SCHEDULED_SCAN_ON_STARTUP is enabled')
+        scheduled_run()
     scheduler.start()
 if __name__=='__main__': main()
