@@ -7,4 +7,4 @@ COPY entrypoint.sh ./entrypoint.sh
 COPY tests ./tests
 COPY README.md README_V0.8.md MODEL_API.md ./
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["uvicorn","app.api:app","--host","0.0.0.0","--port","8000"]
+CMD ["sh","-c","exec uvicorn app.api:app --host 0.0.0.0 --port ${PORT:-8000}"]
