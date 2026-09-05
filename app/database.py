@@ -78,7 +78,7 @@ def save_run(jobs: Iterable, packages: Iterable, report: dict, status='success',
                posted_date,match_score,reasons,gaps,first_seen_at,last_seen_at,application_url,
                years_experience_required,sponsorship,eligibility_note,contact_emails,contact_phones,
                requirements,search_query,cover_letter_required)
-              VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+              VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
               ON CONFLICT (url) DO UPDATE SET title=EXCLUDED.title,company=EXCLUDED.company,
               source_title=EXCLUDED.source_title,source_category=EXCLUDED.source_category,location=EXCLUDED.location,
               work_mode=EXCLUDED.work_mode,salary=EXCLUDED.salary,currency=EXCLUDED.currency,
