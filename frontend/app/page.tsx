@@ -7,7 +7,7 @@ type Package={id:number;role:string;company?:string;match_score?:number;tailored
 type Data={jobs:Job[];packages:Package[];runs:any[];notifications:any[];counts:any};
 type Source={name:string;category:string;domains:string[];jobs:number;official_url?:string};
 type Security={auth_required:boolean;csrf_protection:boolean;secure_cookie:boolean;rate_limit_enabled:boolean;rate_limit_backend:string;auto_apply:boolean;external_url_ssrf_guard:boolean;prompt_injection_boundary:boolean;secrets_server_side:boolean;https_required_in_production:boolean};
-const api=process.env.NEXT_PUBLIC_API_URL ?? '';
+const api=(process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/,'');
 let csrfToken='';
 async function request(path:string,init?:RequestInit){const headers=new Headers(init?.headers);if(init?.method&&!['GET','HEAD','OPTIONS'].includes(init.method.toUpperCase())&&csrfToken)headers.set('X-CSRF-Token',csrfToken);let r:Response;try{r=await fetch(api+path,{...init,headers,credentials:'include',cache:'no-store'})}catch{throw new Error('BACKEND_UNAVAILABLE')}if(r.status===401)throw new Error('AUTH');if(!r.ok)throw new Error(await r.text());return r.json()}
 export default function Home(){
