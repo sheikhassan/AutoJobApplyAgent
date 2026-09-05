@@ -27,6 +27,16 @@ The TinyFish MCP/CLI connect command is for connecting coding agents. The applic
 
 For internet deployment, terminate TLS at a reverse proxy/load balancer and set `COOKIE_SECURE=true`.
 
+## Vercel + Railway deployment
+
+Vercel hosts the `frontend` directory only. Deploy the root Dockerfile as the
+FastAPI backend on Railway, and provision Railway PostgreSQL and Redis services.
+Run the scheduler as a second Railway service using `python -m app.scheduler`.
+Set `NEXT_PUBLIC_API_URL` in Vercel to the public Railway API URL. Set
+`CORS_ORIGINS` in Railway to the exact Vercel URL. Add all runtime secrets from
+`.env.example` to Railway only; never upload `.env` or provider credentials to
+GitHub or Vercel.
+
 
 ## v1.2 Production DB & Cache
 
