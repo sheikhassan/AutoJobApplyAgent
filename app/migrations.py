@@ -32,6 +32,11 @@ ALTER TABLE application_packages ADD COLUMN IF NOT EXISTS jd_snapshot TEXT NOT N
 ALTER TABLE application_packages ADD COLUMN IF NOT EXISTS requirements_snapshot JSONB NOT NULL DEFAULT '[]'::jsonb;
 CREATE INDEX IF NOT EXISTS idx_packages_review_status ON application_packages(review_status, created_at DESC);
 """),
+ ("005_run_grouping", """
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS last_run_id BIGINT;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS last_run_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_jobs_run_seen ON jobs(last_run_id, last_run_at DESC, match_score DESC NULLS LAST);
+"""),
 ]
 
 

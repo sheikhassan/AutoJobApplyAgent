@@ -40,7 +40,7 @@ def scheduled_run():
 
 def main():
     init_db()
-    tz=os.getenv('JOB_HUNTER_TIMEZONE','Asia/Kolkata'); days=os.getenv('JOB_HUNTER_DAYS','mon-fri')
+    tz=os.getenv('JOB_HUNTER_TIMEZONE','Asia/Kolkata'); days=os.getenv('JOB_HUNTER_DAYS','mon-sun')
     scheduler=BlockingScheduler(timezone=tz)
     times=os.getenv('JOB_HUNTER_TIMES','').split(',')
     if not times or not times[0].strip():

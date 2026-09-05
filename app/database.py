@@ -27,6 +27,8 @@ def init_db():
           description TEXT, posted_date TEXT, match_score DOUBLE PRECISION, reasons JSONB NOT NULL DEFAULT '[]',
           gaps JSONB NOT NULL DEFAULT '[]', first_seen_at TIMESTAMPTZ NOT NULL, last_seen_at TIMESTAMPTZ NOT NULL,
           application_status TEXT NOT NULL DEFAULT 'new', application_url TEXT DEFAULT '', years_experience_required DOUBLE PRECISION, sponsorship TEXT DEFAULT 'unknown', eligibility_note TEXT DEFAULT '', contact_emails JSONB NOT NULL DEFAULT '[]', contact_phones JSONB NOT NULL DEFAULT '[]')''')
+        conn.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS last_run_id BIGINT")
+        conn.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS last_run_at TIMESTAMPTZ")
         conn.execute('''CREATE TABLE IF NOT EXISTS security_audit_log (
           id BIGSERIAL PRIMARY KEY, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           event TEXT NOT NULL, actor TEXT, client_ip INET, details JSONB NOT NULL DEFAULT '{}'::jsonb)''')
@@ -77,8 +79,8 @@ def save_run(jobs: Iterable, packages: Iterable, report: dict, status='success',
               (url,title,company,source_title,source_category,location,work_mode,salary,currency,description,
                posted_date,match_score,reasons,gaps,first_seen_at,last_seen_at,application_url,
                years_experience_required,sponsorship,eligibility_note,contact_emails,contact_phones,
-               requirements,search_query,cover_letter_required)
-              VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               requirements,search_query,cover_letter_required,last_run_id,last_run_at)
+              VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
               ON CONFLICT (url) DO UPDATE SET title=EXCLUDED.title,company=EXCLUDED.company,
               source_title=EXCLUDED.source_title,source_category=EXCLUDED.source_category,location=EXCLUDED.location,
               work_mode=EXCLUDED.work_mode,salary=EXCLUDED.salary,currency=EXCLUDED.currency,
@@ -90,10 +92,11 @@ def save_run(jobs: Iterable, packages: Iterable, report: dict, status='success',
               eligibility_note=EXCLUDED.eligibility_note,
               contact_emails=EXCLUDED.contact_emails, contact_phones=EXCLUDED.contact_phones,
               requirements=EXCLUDED.requirements,search_query=EXCLUDED.search_query,
-              cover_letter_required=EXCLUDED.cover_letter_required''',
+              cover_letter_required=EXCLUDED.cover_letter_required,last_run_id=EXCLUDED.last_run_id,
+              last_run_at=EXCLUDED.last_run_at''',
               (d['url'],d['title'],d['company'],d['source_title'],d['source_category'],d['location'],d['work_mode'],
                d['salary'],d['currency'],d['description'],d['posted_date'],d['match_score'],json.dumps(d['reasons']),
-               json.dumps(d['gaps']),now,now,d.get('application_url',''),d.get('years_experience_required'),d.get('sponsorship','unknown'),d.get('eligibility_note',''),json.dumps(d.get('contact_emails',[])),json.dumps(d.get('contact_phones',[])),json.dumps(d.get('requirements',[])),d.get('search_query',''),d.get('cover_letter_required')))
+               json.dumps(d['gaps']),now,now,d.get('application_url',''),d.get('years_experience_required'),d.get('sponsorship','unknown'),d.get('eligibility_note',''),json.dumps(d.get('contact_emails',[])),json.dumps(d.get('contact_phones',[])),json.dumps(d.get('requirements',[])),d.get('search_query',''),d.get('cover_letter_required'),rid,now))
         for p in packages:
             d=p.model_dump()
             conn.execute('''INSERT INTO application_packages

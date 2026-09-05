@@ -31,7 +31,10 @@ For internet deployment, terminate TLS at a reverse proxy/load balancer and set 
 
 Vercel hosts the `frontend` directory only. Deploy the root Dockerfile as the
 FastAPI backend on Railway, and provision Railway PostgreSQL and Redis services.
-Run the scheduler as a second Railway service using `python -m app.scheduler`.
+Run the scheduler as a second Railway service from the same root Dockerfile with
+`SERVICE_ROLE=scheduler` (or command `python -m app.scheduler`). Confirm its
+logs show all configured `JOB_HUNTER_TIMES` in `JOB_HUNTER_TIMEZONE`; do not run
+the scheduler only inside the API service.
 Set `NEXT_PUBLIC_API_URL` in Vercel to the public Railway API URL. Set
 `CORS_ORIGINS` in Railway to the exact Vercel URL. Add all runtime secrets from
 `.env.example` to Railway only; never upload `.env` or provider credentials to

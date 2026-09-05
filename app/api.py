@@ -149,7 +149,9 @@ def dashboard():
     cached=cache_get('dashboard','main')
     if cached is not None: return cached
     jobs=query('''SELECT * FROM jobs
-        ORDER BY (work_mode = 'remote') DESC,
+        WHERE last_run_at >= NOW() - INTERVAL '1 day'
+        ORDER BY last_run_at DESC,
+                 (work_mode = 'remote') DESC,
                  (work_mode = 'hybrid') DESC,
                  CASE UPPER(COALESCE(currency,''))
                    WHEN 'USD' THEN 5 WHEN 'EUR' THEN 4 WHEN 'AED' THEN 3 WHEN 'SAR' THEN 2
@@ -171,7 +173,9 @@ def jobs(status:str|None=None,source:str|None=None,remote:str|None=None,min_scor
     if remote: sql+=' AND work_mode=%s'; params.append(remote)
     if status: sql+=' AND application_status=%s'; params.append(status)
     if search: sql+=' AND (title ILIKE %s OR company ILIKE %s OR location ILIKE %s)'; params += ['%'+search+'%']*3
-    sql+=''' ORDER BY (work_mode = 'remote') DESC,
+    sql+=''' AND last_run_at >= NOW() - INTERVAL '1 day'
+             ORDER BY last_run_at DESC,
+                 (work_mode = 'remote') DESC,
                  (work_mode = 'hybrid') DESC,
                  CASE UPPER(COALESCE(currency,''))
                    WHEN 'USD' THEN 5 WHEN 'EUR' THEN 4 WHEN 'AED' THEN 3 WHEN 'SAR' THEN 2
@@ -298,7 +302,8 @@ def sources():
 def settings():
     return {'email_updates':get_setting('email_updates',os.getenv('EMAIL_UPDATES','true').lower() in {'1','true','yes'}),
             'notify_to':os.getenv('NOTIFY_TO',''),'min_match_score':float(get_setting('min_match_score',os.getenv('MIN_MATCH_SCORE','0.60'))),
-            'auto_apply':False,'cold_outreach_enabled':get_setting('cold_outreach_enabled',os.getenv('COLD_OUTREACH_ENABLED','false').lower() in {'1','true','yes'}),'search_primary':'Exa','search_fallback':'TinyFish','auth_required':os.getenv('AUTH_REQUIRED','true').lower() in {'1','true','yes'}}
+            'auto_apply':False,'cold_outreach_enabled':get_setting('cold_outreach_enabled',os.getenv('COLD_OUTREACH_ENABLED','false').lower() in {'1','true','yes'}),'search_primary':'Exa','search_fallback':'TinyFish','auth_required':os.getenv('AUTH_REQUIRED','true').lower() in {'1','true','yes'},
+            'schedule_times':os.getenv('JOB_HUNTER_TIMES','08:00'),'schedule_days':os.getenv('JOB_HUNTER_DAYS','mon-sun'),'timezone':os.getenv('JOB_HUNTER_TIMEZONE','Asia/Kolkata')}
 
 @app.patch('/api/settings',dependencies=[Depends(require_auth)])
 def update_settings(body:SettingsBody):
