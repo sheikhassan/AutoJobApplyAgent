@@ -95,7 +95,9 @@ def login(body:LoginBody, request:Request):
         audit('login_failed', client_ip=client_ip(request))
         raise HTTPException(401,'Invalid credentials')
     resp=JSONResponse({'ok':True})
-    resp.set_cookie(COOKIE,issue_session(),httponly=True,secure=os.getenv('COOKIE_SECURE','false').lower() in {'1','true','yes'},samesite='lax',max_age=86400,path='/')
+    same_site=os.getenv('COOKIE_SAMESITE','lax').lower()
+    if same_site not in {'lax','strict','none'}: same_site='lax'
+    resp.set_cookie(COOKIE,issue_session(),httponly=True,secure=os.getenv('COOKIE_SECURE','false').lower() in {'1','true','yes'},samesite=same_site,max_age=86400,path='/')
     audit('login_success', client_ip=client_ip(request))
     return resp
 
