@@ -9,4 +9,5 @@
 .mobile-nav button{width:auto;flex:1;min-width:0}
 .jd-box{max-height:260px;overflow:auto;white-space:pre-wrap;padding:13px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;color:#dbe5f8;line-height:1.55}
 .package-preview{margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}
+.package-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 @media(max-width:700px){main{padding:16px 12px}.top h1{font-size:23px}.actions{width:100%}.actions .btn{flex:1}.mobile-nav{overflow-x:auto;justify-content:flex-start}.mobile-nav button{flex:0 0 66px}.modal{max-height:calc(100vh - 24px)}.detail-grid{gap:7px}.detail-grid>div{padding:10px}.job{grid-template-columns:42px minmax(0,1fr)}.right{grid-column:1/-1}}

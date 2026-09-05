@@ -1,7 +1,7 @@
 import logging, os, hmac
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 from .config import JobConfig
 from .pipeline import run
@@ -75,6 +75,7 @@ class StatusBody(BaseModel): status:str=Field(pattern='^(new|shortlisted|applied
 class SettingsBody(BaseModel): email_updates: bool|None=None; min_match_score: float|None=Field(default=None,ge=0,le=1); cold_outreach_enabled: bool|None=None
 class LoginBody(BaseModel): password:str
 class ReviewBody(BaseModel): review_status:str=Field(pattern='^(approved|rejected|pending)$')
+class ArtifactBody(BaseModel): artifact:str=Field(pattern='^(resume|cover_letter)$')
 
 @app.get('/health')
 def health(): return {'status':'ok','version':'1.2.0','database':database_ready(),'cache':cache_ping(),'search':('exa' if os.getenv('EXA_API_KEY') else '') + ('+tinyfish' if os.getenv('TINYFISH_API_KEY') else ''),'email_updates':os.getenv('EMAIL_UPDATES','true').lower() in {'1','true','yes'}}
@@ -234,6 +235,21 @@ def review_package(package_id:int, body:ReviewBody, request:Request):
     cache_delete('dashboard','main'); cache_delete('applications','main')
     audit('package_reviewed', client_ip=client_ip(request), details={'package_id':package_id,'review_status':body.review_status})
     return {'id':package_id,'review_status':body.review_status}
+
+@app.get('/api/packages/{package_id}/download',dependencies=[Depends(require_auth)])
+def download_package(package_id:int, artifact:str='resume'):
+    if artifact not in {'resume','cover_letter'}:
+        raise HTTPException(400,'Artifact must be resume or cover_letter')
+    rows=query('''SELECT p.*, j.title AS job_title, j.company AS job_company
+                 FROM application_packages p JOIN jobs j ON j.url=p.job_url
+                 WHERE p.id=%s''',(package_id,))
+    if not rows: raise HTTPException(404,'Package not found')
+    row=rows[0]
+    content=row['tailored_resume'] if artifact == 'resume' else (row.get('cover_letter') or '')
+    if not content: raise HTTPException(404,'This package has no cover letter')
+    stem='-'.join(str(row.get('job_title') or row.get('role') or 'job').lower().split())[:80]
+    filename=f'{stem}-{artifact}.txt'
+    return PlainTextResponse(content,headers={'Content-Disposition':f'attachment; filename="{filename}"'})
 
 @app.get('/api/applications',dependencies=[Depends(require_auth)])
 def applications():

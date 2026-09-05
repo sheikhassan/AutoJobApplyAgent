@@ -105,10 +105,9 @@ def run(config: JobConfig, max_queries: int | None = None, results_per_query: in
     except Exception:
         contents = {}
 
-    use_model = os.getenv("USE_MODEL", "true").lower() in {"1", "true", "yes"}
-    provider = LoadBalancedModelProvider() if use_model else StubModelProvider()
-    package_limit = int(os.getenv("MAX_PACKAGES_PER_RUN", "10"))
-    packages = [provider.build_application_package(j) for j in jobs if j.match_score >= config.min_match_score][:package_limit]
+    # Material generation is intentionally opt-in. The user must review the
+    # external application page and request a package from the job modal.
+    packages = []
 
     outreach_results=[]
     if os.getenv("COLD_OUTREACH_ENABLED", "false").lower() in {"1","true","yes"}:
@@ -129,7 +128,7 @@ def run(config: JobConfig, max_queries: int | None = None, results_per_query: in
     report = {
         "queries_run": queries,
         "jobs_found": len(jobs),
-        "qualified": len(packages),
+        "qualified": 0,
         "content_pages_fetched": len(contents),
         "source_universe": "job boards + ATS + AI talent networks + company career pages",
         "auto_apply": False,
