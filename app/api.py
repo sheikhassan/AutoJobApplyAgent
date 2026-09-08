@@ -120,6 +120,16 @@ class LoginBody(BaseModel): password:str
 class ReviewBody(BaseModel): review_status:str=Field(pattern='^(approved|rejected|pending)$')
 class ArtifactBody(BaseModel): artifact:str=Field(pattern='^(resume|cover_letter)$')
 
+@app.get('/')
+def root():
+    return {
+        'status': 'ok',
+        'service': 'Job Hunter Backend API',
+        'dashboard_url': 'https://auto-job-apply-agent.vercel.app',
+        'health_url': '/health',
+        'docs_url': '/docs'
+    }
+
 @app.get('/health')
 def health(): return {'status':'ok','version':'1.2.0','database':database_ready(),'cache':cache_ping(),'search':('exa' if os.getenv('EXA_API_KEY') else '') + ('+tinyfish' if os.getenv('TINYFISH_API_KEY') else ''),'email_updates':os.getenv('EMAIL_UPDATES','true').lower() in {'1','true','yes'}}
 
