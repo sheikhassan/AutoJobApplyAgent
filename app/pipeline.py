@@ -116,7 +116,7 @@ def run(config: JobConfig, max_queries: int | None = None, results_per_query: in
             for j in jobs:
                 if j.match_score < config.min_match_score or not j.contact_emails:
                     continue
-                result=send_cold_outreach(j, provider=provider)
+                result=send_cold_outreach(j)
                 outreach_results.append({"job_url":j.url, **result})
         except Exception as exc:
             outreach_results.append({"status":"failed","error":str(exc)[:500]})

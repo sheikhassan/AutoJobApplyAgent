@@ -1,0 +1,40 @@
+name: Scheduled Job Hunter Scan
+
+on:
+  schedule:
+    # 06:00, 08:00, 13:00, 22:00, 00:00 Asia/Kolkata (IST = UTC+05:30)
+    # UTC: 00:30, 02:30, 07:30, 16:30, 18:30
+    - cron: '30 0,2,7,16,18 * * *'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual trigger'
+        required: false
+        default: 'Manual test run'
+
+jobs:
+  trigger-scan:
+    name: Trigger Scan on Railway Backend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Job Hunter Scan
+        env:
+          BACKEND_URL: ${{ secrets.RAILWAY_BACKEND_URL || 'https://backend-production-089f.up.railway.app' }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET || secrets.DASHBOARD_SESSION_SECRET }}
+        run: |
+          echo "Triggering Job Hunter scan at ${BACKEND_URL}/api/cron/run..."
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "${BACKEND_URL}/api/cron/run" \
+            -H "X-Cron-Secret: ${CRON_SECRET}" \
+            -H "Content-Type: application/json")
+          
+          HTTP_STATUS=$(echo "$RESPONSE" | tr -d '\r' | grep "HTTP_STATUS" | cut -d':' -f2)
+          BODY=$(echo "$RESPONSE" | grep -v "HTTP_STATUS")
+          
+          echo "Response Body: $BODY"
+          echo "HTTP Status: $HTTP_STATUS"
+          
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "::error::Scan trigger failed with status $HTTP_STATUS"
+            exit 1
+          fi
+          echo "Scan successfully triggered in background."

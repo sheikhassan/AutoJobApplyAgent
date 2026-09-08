@@ -1,5 +1,6 @@
-import logging, os, hmac
-from fastapi import FastAPI, HTTPException, Request, Depends
+import logging, os, hmac, threading
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, HTTPException, Request, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
@@ -15,7 +16,49 @@ from .exa_search import SOURCES
 
 logging.basicConfig(level=os.getenv('LOG_LEVEL','INFO'))
 log=logging.getLogger(__name__)
-app=FastAPI(title='VentureGPT Job Hunter API',version='1.0.0')
+
+_embedded_scheduler = None
+
+def get_scheduler_status() -> dict:
+    try:
+        from .scheduler import get_scheduler_info
+        return get_scheduler_info(_embedded_scheduler)
+    except Exception as exc:
+        return {'running': False, 'error': str(exc)}
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _embedded_scheduler
+    try:
+        init_db()
+    except Exception as exc:
+        log.warning('Database initialization deferred: %s', exc)
+
+    if os.getenv('EMBEDDED_SCHEDULER', 'true').lower() in {'1', 'true', 'yes'} and os.getenv('SERVICE_ROLE', 'api') != 'scheduler':
+        try:
+            from apscheduler.schedulers.background import BackgroundScheduler
+            from .scheduler import setup_scheduler, run_scheduled_scan
+            tz = os.getenv('JOB_HUNTER_TIMEZONE', 'Asia/Kolkata')
+            _embedded_scheduler = BackgroundScheduler(timezone=tz)
+            setup_scheduler(_embedded_scheduler)
+            _embedded_scheduler.start()
+            log.info('Embedded Job Hunter BackgroundScheduler active for timezone %s', tz)
+            if os.getenv('RUN_SCHEDULED_SCAN_ON_STARTUP', 'false').lower() in {'1', 'true', 'yes'}:
+                log.info('Running startup scan in background thread...')
+                threading.Thread(target=run_scheduled_scan, daemon=True).start()
+        except Exception as exc:
+            log.exception('Failed to start embedded scheduler: %s', exc)
+
+    yield
+
+    if _embedded_scheduler and getattr(_embedded_scheduler, 'running', False):
+        try:
+            _embedded_scheduler.shutdown(wait=False)
+            log.info('Embedded BackgroundScheduler stopped')
+        except Exception:
+            pass
+
+app=FastAPI(title='VentureGPT Job Hunter API',version='1.0.0',lifespan=lifespan)
 
 class RateLimiter:
     def __init__(self):
@@ -60,7 +103,7 @@ async def security_middleware(request: Request, call_next):
     if request.url.path.startswith('/api/') and not limiter.api(ip):
         audit('rate_limit_api', client_ip=ip, details={'path':request.url.path})
         return JSONResponse({'detail':'Rate limit exceeded.'}, status_code=429, headers={'Retry-After':os.getenv('RATE_LIMIT_WINDOW_SECONDS','60')})
-    if request.method not in {'GET','HEAD','OPTIONS'} and request.url.path != '/auth/login':
+    if request.method not in {'GET','HEAD','OPTIONS'} and request.url.path not in {'/auth/login', '/api/cron/run'}:
         require_csrf(request)
     response=await call_next(request)
     security_headers(response)
@@ -68,8 +111,10 @@ async def security_middleware(request: Request, call_next):
     return response
 
 origins=[x.strip() for x in os.getenv('CORS_ORIGINS','http://localhost:3000').split(',') if x.strip()]
-app.add_middleware(CORSMiddleware,allow_origins=origins,allow_credentials=True,allow_methods=['*'],allow_headers=['*'])
-init_db()
+try:
+    init_db()
+except Exception:
+    pass
 
 class StatusBody(BaseModel): status:str=Field(pattern='^(new|shortlisted|applied|interview|rejected|archived)$')
 class SettingsBody(BaseModel): email_updates: bool|None=None; min_match_score: float|None=Field(default=None,ge=0,le=1); cold_outreach_enabled: bool|None=None
@@ -162,7 +207,7 @@ def dashboard():
         FROM application_packages p JOIN jobs j ON j.url=p.job_url
         ORDER BY p.job_url, p.created_at DESC, p.id DESC''')
     packages.sort(key=lambda package: (package.get('created_at') or ''), reverse=True)
-    payload={'jobs':jobs,'runs':runs,'packages':packages,'counts':{'jobs':len(jobs),'strong_matches':sum((j.get('match_score') or 0)>=.8 for j in jobs),'remote':sum(j.get('work_mode')=='remote' for j in jobs),'ready':len(packages)}}
+    payload={'jobs':jobs,'runs':runs,'packages':packages,'counts':{'jobs':len(jobs),'strong_matches':sum((j.get('match_score') or 0)>=.8 for j in jobs),'remote':sum(j.get('work_mode')=='remote' for j in jobs),'ready':len(packages)},'scheduler':get_scheduler_status()}
     cache_set('dashboard','main',payload,int(os.getenv('CACHE_DASHBOARD_TTL_SECONDS','15')))
     return payload
 
@@ -303,7 +348,8 @@ def settings():
     return {'email_updates':get_setting('email_updates',os.getenv('EMAIL_UPDATES','true').lower() in {'1','true','yes'}),
             'notify_to':os.getenv('NOTIFY_TO',''),'min_match_score':float(get_setting('min_match_score',os.getenv('MIN_MATCH_SCORE','0.60'))),
             'auto_apply':False,'cold_outreach_enabled':get_setting('cold_outreach_enabled',os.getenv('COLD_OUTREACH_ENABLED','false').lower() in {'1','true','yes'}),'search_primary':'Exa','search_fallback':'TinyFish','auth_required':os.getenv('AUTH_REQUIRED','true').lower() in {'1','true','yes'},
-            'schedule_times':os.getenv('JOB_HUNTER_TIMES','08:00'),'schedule_days':os.getenv('JOB_HUNTER_DAYS','mon-sun'),'timezone':os.getenv('JOB_HUNTER_TIMEZONE','Asia/Kolkata')}
+            'schedule_times':os.getenv('JOB_HUNTER_TIMES','08:00'),'schedule_days':os.getenv('JOB_HUNTER_DAYS','mon-sun'),'timezone':os.getenv('JOB_HUNTER_TIMEZONE','Asia/Kolkata'),
+            'scheduler':get_scheduler_status()}
 
 @app.patch('/api/settings',dependencies=[Depends(require_auth)])
 def update_settings(body:SettingsBody):
@@ -345,3 +391,33 @@ def security():
 @app.get('/api/security/audit',dependencies=[Depends(require_auth)])
 def security_audit():
     return query('SELECT id,created_at,event,actor,client_ip,details FROM security_audit_log ORDER BY created_at DESC LIMIT 100')
+
+@app.get('/api/scheduler/status')
+def scheduler_status():
+    return get_scheduler_status()
+
+@app.post('/api/cron/run')
+def trigger_cron_run(request: Request, background_tasks: BackgroundTasks):
+    allowed_secrets = [s for s in [os.getenv('CRON_SECRET', ''), os.getenv('DASHBOARD_SESSION_SECRET', '')] if s]
+    auth_header = request.headers.get('Authorization', '')
+    bearer_token = auth_header.removeprefix('Bearer ').strip() if auth_header.startswith('Bearer ') else ''
+    header_secret = request.headers.get('X-Cron-Secret', '') or bearer_token
+    is_secret_auth = any(header_secret and hmac.compare_digest(header_secret, s) for s in allowed_secrets)
+
+    token = request.cookies.get(COOKIE)
+    is_session_auth = bool(token and valid_session(token))
+
+    if not is_secret_auth and not is_session_auth:
+        audit('cron_trigger_unauthorized', client_ip=client_ip(request))
+        raise HTTPException(401, 'Unauthorized: invalid cron secret or session')
+
+    from .scheduler import run_scheduled_scan
+    background_tasks.add_task(run_scheduled_scan)
+    audit('cron_trigger_accepted', client_ip=client_ip(request))
+    return {
+        'ok': True,
+        'status': 'triggered',
+        'message': 'Job Hunter scan initiated in background under distributed lock',
+        'scheduler': get_scheduler_status(),
+    }
+

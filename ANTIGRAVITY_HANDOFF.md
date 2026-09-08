@@ -112,12 +112,11 @@ Fix this before claiming the latest code is deployed:
 - Branch: `main`.
 - Root directory: repository root.
 - Builder: Dockerfile.
-- Set `SERVICE_ROLE=scheduler`, or set command to:
-  `python -m app.scheduler`
-- Do not expose a public HTTP domain.
-- Keep one scheduler service only. Do not run the scheduler inside the API service.
+- **Embedded Mode (Default)**: The API backend runs `BackgroundScheduler` automatically via `lifespan` in `app/api.py`. It shares all environment variables and database connections, preventing container restart loops.
+- **Failsafe Webhook**: `POST /api/cron/run` accepts `X-Cron-Secret` and is triggered by `.github/workflows/scheduled_scan.yml` at 06:00, 08:00, 13:00, 22:00, and 00:00 Asia/Kolkata.
+- **Worker Mode (Optional)**: If running as a dedicated separate service, set `SERVICE_ROLE=scheduler` and command `python -m app.scheduler`.
 - Restart policy: on failure.
-- Logs must show the configured timezone and all configured times.
+- Logs show the configured timezone and all configured times.
 
 ### PostgreSQL and Redis
 
