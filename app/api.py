@@ -425,7 +425,7 @@ def trigger_cron_run(request: Request, background_tasks: BackgroundTasks):
         scan_result = run_scheduled_scan()
         recent_jobs = query(
             'SELECT id, title, company, work_mode, match_score, url, application_url, salary, currency '
-            'FROM jobs ORDER BY created_at DESC, match_score DESC LIMIT 25'
+            'FROM jobs ORDER BY id DESC, match_score DESC LIMIT 25'
         )
         audit('cron_trigger_completed_sync', client_ip=client_ip(request))
         return {
