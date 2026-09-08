@@ -111,10 +111,8 @@ async def security_middleware(request: Request, call_next):
     return response
 
 origins=[x.strip() for x in os.getenv('CORS_ORIGINS','http://localhost:3000').split(',') if x.strip()]
-try:
-    init_db()
-except Exception:
-    pass
+origin_regex=os.getenv('CORS_ORIGIN_REGEX', r'https://.*\.vercel\.app')
+app.add_middleware(CORSMiddleware,allow_origins=origins,allow_origin_regex=origin_regex,allow_credentials=True,allow_methods=['*'],allow_headers=['*'])
 
 class StatusBody(BaseModel): status:str=Field(pattern='^(new|shortlisted|applied|interview|rejected|archived)$')
 class SettingsBody(BaseModel): email_updates: bool|None=None; min_match_score: float|None=Field(default=None,ge=0,le=1); cold_outreach_enabled: bool|None=None
