@@ -420,6 +420,22 @@ def trigger_cron_run(request: Request, background_tasks: BackgroundTasks):
         raise HTTPException(401, 'Unauthorized: invalid cron secret or session')
 
     from .scheduler import run_scheduled_scan
+    sync = request.query_params.get('sync', 'false').lower() in {'1', 'true', 'yes'}
+    if sync:
+        scan_result = run_scheduled_scan()
+        recent_jobs = query(
+            'SELECT id, title, company, work_mode, match_score, url, application_url, salary, currency '
+            'FROM jobs ORDER BY created_at DESC, match_score DESC LIMIT 25'
+        )
+        audit('cron_trigger_completed_sync', client_ip=client_ip(request))
+        return {
+            'ok': True,
+            'status': 'completed',
+            'result': scan_result,
+            'jobs': recent_jobs,
+            'scheduler': get_scheduler_status(),
+        }
+
     background_tasks.add_task(run_scheduled_scan)
     audit('cron_trigger_accepted', client_ip=client_ip(request))
     return {

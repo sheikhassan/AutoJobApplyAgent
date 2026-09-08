@@ -2,9 +2,9 @@ name: Scheduled Job Hunter Scan
 
 on:
   schedule:
-    # 06:00, 08:00, 13:00, 22:00, 00:00 Asia/Kolkata (IST = UTC+05:30)
-    # UTC: 00:30, 02:30, 07:30, 16:30, 18:30
-    - cron: '30 0,2,7,16,18 * * *'
+    # 06:00, 08:00, 13:00, 17:00 (5 PM test), 22:00, 00:00 Asia/Kolkata (IST = UTC+05:30)
+    # UTC: 00:30, 02:30, 07:30, 11:30, 16:30, 18:30
+    - cron: '30 0,2,7,11,16,18 * * *'
   workflow_dispatch:
     inputs:
       reason:
@@ -13,28 +13,131 @@ on:
         default: 'Manual test run'
 
 jobs:
-  trigger-scan:
-    name: Trigger Scan on Railway Backend
+  trigger-scan-and-notify:
+    name: Run Scan and Send Email Digest
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Job Hunter Scan
+        id: scan
         env:
           BACKEND_URL: ${{ secrets.RAILWAY_BACKEND_URL || 'https://backend-production-089f.up.railway.app' }}
           CRON_SECRET: ${{ secrets.CRON_SECRET || secrets.DASHBOARD_SESSION_SECRET }}
         run: |
-          echo "Triggering Job Hunter scan at ${BACKEND_URL}/api/cron/run..."
-          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "${BACKEND_URL}/api/cron/run" \
+          echo "Triggering Job Hunter scan at ${BACKEND_URL}/api/cron/run?sync=true..."
+          RESPONSE=$(curl -s --max-time 120 -w "\nHTTP_STATUS:%{http_code}" -X POST "${BACKEND_URL}/api/cron/run?sync=true" \
             -H "X-Cron-Secret: ${CRON_SECRET}" \
             -H "Content-Type: application/json")
           
           HTTP_STATUS=$(echo "$RESPONSE" | tr -d '\r' | grep "HTTP_STATUS" | cut -d':' -f2)
           BODY=$(echo "$RESPONSE" | grep -v "HTTP_STATUS")
           
-          echo "Response Body: $BODY"
           echo "HTTP Status: $HTTP_STATUS"
           
           if [ "$HTTP_STATUS" -ne 200 ]; then
             echo "::error::Scan trigger failed with status $HTTP_STATUS"
+            echo "$BODY"
             exit 1
           fi
-          echo "Scan successfully triggered in background."
+          
+          echo "Scan finished successfully."
+          echo "$BODY" > scan_result.json
+
+      - name: Send Job Digest Email via Gmail SMTP
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          NOTIFY_TO: ${{ secrets.NOTIFY_TO }}
+        run: |
+          python3 - << 'PY'
+          import json, os, smtplib, ssl
+          from email.message import EmailMessage
+
+          smtp_user = os.environ.get('SMTP_USER')
+          smtp_password = os.environ.get('SMTP_PASSWORD')
+          notify_to = os.environ.get('NOTIFY_TO', 'sheikhasan44@gmail.com')
+
+          if not smtp_user or not smtp_password:
+              print("SMTP credentials not configured in GitHub Secrets; skipping direct email step.")
+              exit(0)
+
+          try:
+              with open('scan_result.json') as f:
+                  data = json.load(f)
+          except Exception as exc:
+              print(f"Could not read scan result: {exc}")
+              exit(0)
+
+          jobs = data.get('jobs', [])
+          if not jobs:
+              print("No jobs found in scan result.")
+              exit(0)
+
+          subject = f"🎯 Job Hunter — {len(jobs)} Top AI/ML Matches with Apply Links"
+          
+          lines = [
+              f"Job Hunter Scan Completed — Top Matching Jobs",
+              f"Recipient: {notify_to}",
+              f"Total jobs surfaced: {len(jobs)}",
+              "=" * 60,
+              ""
+          ]
+
+          html_rows = []
+          for i, j in enumerate(jobs[:25], 1):
+              title = j.get('title', 'Role')
+              company = j.get('company', 'Company')
+              work_mode = j.get('work_mode', 'Remote')
+              match_score = f"{int(j.get('match_score', 0) * 100)}%" if j.get('match_score') else "N/A"
+              apply_url = j.get('application_url') or j.get('url', '')
+              salary = f" | {j.get('currency', '')} {j.get('salary', '')}".strip() if j.get('salary') else ""
+
+              lines.append(f"{i}. [{match_score} Match] {title} at {company} ({work_mode}{salary})")
+              lines.append(f"   Apply Link: {apply_url}")
+              lines.append("")
+
+              html_rows.append(f"""
+              <li style="margin-bottom: 16px; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px;">
+                <div style="font-size: 16px; font-weight: bold; color: #1e293b;">
+                  <span style="background: #3b82f6; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; margin-right: 6px;">{match_score} Match</span>
+                  {title} — <span style="color: #64748b;">{company}</span>
+                </div>
+                <div style="font-size: 13px; color: #64748b; margin: 6px 0;">Work Mode: <strong>{work_mode}</strong>{salary}</div>
+                <a href="{apply_url}" target="_blank" style="display: inline-block; background: #2563eb; color: white; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: bold; margin-top: 4px;">Apply Now →</a>
+              </li>
+              """)
+
+          lines.append("=" * 60)
+          lines.append("Review your tailored resumes & cover letters on the live dashboard:")
+          lines.append("https://auto-job-apply-agent.vercel.app")
+          lines.append("\nNote: Human approval is mandatory. The agent does NOT auto-submit applications.")
+
+          body = "\n".join(lines)
+
+          html_content = f"""
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 650px; margin: 0 auto; padding: 20px; color: #0f172a;">
+            <h2 style="color: #1e3a8a; border-bottom: 2px solid #3b82f6; padding-bottom: 8px;">🎯 Job Hunter — Scheduled Scan Results</h2>
+            <p style="color: #475569;">Found <strong>{len(jobs)}</strong> top matching roles tailored for your profile. Review them and click below to apply:</p>
+            <ul style="list-style: none; padding: 0;">
+              {''.join(html_rows)}
+            </ul>
+            <div style="margin-top: 24px; padding: 16px; background: #f1f5f9; border-radius: 8px; text-align: center;">
+              <p style="margin: 0 0 8px; font-weight: bold;">Open Command Center:</p>
+              <a href="https://auto-job-apply-agent.vercel.app" style="background: #0f172a; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: bold;">Open Dashboard</a>
+            </div>
+          </div>
+          """
+
+          msg = EmailMessage()
+          msg['Subject'] = subject
+          msg['From'] = smtp_user
+          msg['To'] = notify_to
+          msg.set_content(body)
+          msg.add_alternative(html_content, subtype='html')
+
+          with smtplib.SMTP('smtp.gmail.com', 587, timeout=20) as s:
+              s.starttls(context=ssl.create_default_context())
+              s.login(smtp_user, smtp_password)
+              s.send_message(msg)
+
+          print(f"Successfully sent Job Digest email with {len(jobs)} links to {notify_to}!")
+          PY
