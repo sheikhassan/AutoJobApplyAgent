@@ -3,7 +3,27 @@ from email.message import EmailMessage
 from .database import log_notification, get_setting
 log=logging.getLogger(__name__)
 
+def send_via_resend(subject:str, body:str, html:str|None=None) -> bool:
+    api_key=os.getenv('RESEND_API_KEY','')
+    if not api_key: return False
+    import requests
+    from_email=os.getenv('RESEND_FROM_EMAIL', 'onboarding@resend.dev')
+    to_email=os.getenv('NOTIFY_TO','')
+    if not to_email: return False
+    payload={'from':from_email,'to':[to_email],'subject':subject,'text':body}
+    if html: payload['html']=html
+    resp=requests.post('https://api.resend.com/emails',
+                       headers={'Authorization':f'Bearer {api_key}','Content-Type':'application/json'},
+                       json=payload,timeout=15)
+    if not resp.ok: raise RuntimeError(f'Resend API error: {resp.status_code} {resp.text}')
+    return True
+
 def send_email(subject:str, body:str, html:str|None=None):
+    if os.getenv('RESEND_API_KEY'):
+        try:
+            if send_via_resend(subject, body, html): return
+        except Exception as exc:
+            log.warning('Resend HTTPS email failed, trying SMTP fallback: %s', exc)
     required=['SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASSWORD','NOTIFY_TO']
     missing=[x for x in required if not os.getenv(x)]
     if missing: raise RuntimeError('Missing email settings: '+', '.join(missing))
